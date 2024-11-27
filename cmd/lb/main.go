@@ -5,20 +5,26 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync"
 )
 
-const backendURL = "http://localhost:8081"
+var (
+	backendURLs = [2]string{"http://localhost:8080", "http://localhost:8081"}
+	server      int
+	mutex       sync.Mutex
+)
 
 func main() {
 	http.HandleFunc("/", handler)
 
-	port := ":8080"
+	port := ":9000"
 	if err := http.ListenAndServe(port, nil); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
+
 	fmt.Printf("Received request from %s\n", r.RemoteAddr)
 	fmt.Printf("%s %s %s\n", r.Method, r.URL.Path, r.Proto)
 	fmt.Printf("Host: %s\n", r.Host)
@@ -28,10 +34,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Forward request to the backend
-	req, err := http.NewRequest(r.Method, backendURL+r.URL.Path, r.Body)
+	// Alternate requests to backend servers
+	mutex.Lock()
+	currentServer := backendURLs[server]
+	server = (server + 1) % len(backendURLs)
+	mutex.Unlock()
+
+	req, err := http.NewRequest(r.Method, currentServer+r.URL.Path, r.Body)
 	if err != nil {
-		http.Error(w, "Failed to create request to backend", http.StatusInternalServerError)
+		http.Error(w, "Error creating request", http.StatusInternalServerError)
 		return
 	}
 	req.Header = r.Header
